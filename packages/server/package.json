@@ -14,13 +14,14 @@
     "rebuild-sqlite": "npm rebuild better-sqlite3"
   },
   "dependencies": {
-    "@openchatlab/core": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.12.1",
     "@openchatlab/config": "workspace:*",
+    "@openchatlab/core": "workspace:*",
     "@openchatlab/node-runtime": "workspace:*",
     "@openchatlab/shared-types": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.12.1",
     "@openchatlab/tools": "workspace:*",
-    "commander": "^13.1.0"
+    "commander": "^13.1.0",
+    "fastify": "^5.8.4"
   },
   "devDependencies": {
     "tsx": "^4.21.0"

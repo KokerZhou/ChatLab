@@ -6,3 +6,4 @@
  */
 
 export { run } from './cli'
+export { startHttpServer, stopHttpServer } from './http'

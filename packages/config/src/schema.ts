@@ -20,6 +20,7 @@ export const dataConfigSchema = z.object({
 export const apiConfigSchema = z.object({
   port: z.number().int().min(1).max(65535).default(3210),
   host: z.string().default('127.0.0.1'),
+  token: z.string().default(''),
 })
 
 export const localeConfigSchema = z.object({
