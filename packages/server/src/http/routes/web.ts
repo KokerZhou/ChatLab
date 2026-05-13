@@ -5,6 +5,9 @@
  * 数据格式直接对齐 QueryAdapter 接口，避免前端二次转换。
  */
 
+import * as fs from 'fs'
+import * as os from 'os'
+import * as path from 'path'
 import type { FastifyInstance } from 'fastify'
 import type { DatabaseManager } from '@openchatlab/node-runtime'
 import type { TimeFilter } from '@openchatlab/shared-types'
@@ -21,6 +24,20 @@ import {
   getDatabaseSchema,
   executeReadonlySql,
 } from '@openchatlab/core'
+import {
+  streamImport,
+  detectFormat,
+  detectAllFormats,
+  getSupportedFormats,
+  scanMultiChatFile,
+} from '../../import'
+
+function resolveNativeBinding(): string | undefined {
+  if (process.versions.electron) return undefined
+  const nativePath = path.resolve(__dirname, '../../../native/better_sqlite3.node')
+  if (fs.existsSync(nativePath)) return nativePath
+  return undefined
+}
 
 function ensureDb(dbManager: DatabaseManager, sessionId: string) {
   const db = dbManager.open(sessionId)
@@ -42,7 +59,12 @@ function parseTimeFilter(query: Record<string, string | undefined>): TimeFilter 
   return filter
 }
 
-export function registerWebRoutes(server: FastifyInstance, dbManager: DatabaseManager): void {
+export async function registerWebRoutes(server: FastifyInstance, dbManager: DatabaseManager): Promise<void> {
+  const multipart = await import('@fastify/multipart')
+  await server.register(multipart.default, {
+    limits: { fileSize: 1024 * 1024 * 1024 }, // 1GB
+  })
+
   // ==================== 会话管理 ====================
 
   server.get('/_web/sessions', async () => {
@@ -370,5 +392,113 @@ export function registerWebRoutes(server: FastifyInstance, dbManager: DatabaseMa
         })),
       }
     })
+  })
+
+  // ==================== 导入管线 ====================
+
+  server.get('/_web/supported-formats', async () => {
+    return getSupportedFormats()
+  })
+
+  server.post('/_web/detect-format', async (request, reply) => {
+    const data = await (request as any).file()
+    if (!data) return reply.code(400).send({ error: 'No file uploaded' })
+
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chatlab-detect-'))
+    const tmpPath = path.join(tmpDir, data.filename || 'upload')
+
+    try {
+      const chunks: Buffer[] = []
+      for await (const chunk of data.file) {
+        chunks.push(chunk)
+      }
+      fs.writeFileSync(tmpPath, Buffer.concat(chunks))
+
+      const format = detectFormat(tmpPath)
+      const allFormats = detectAllFormats(tmpPath)
+      return { format, allFormats }
+    } finally {
+      try { fs.unlinkSync(tmpPath) } catch { /* ignore */ }
+      try { fs.rmdirSync(tmpDir) } catch { /* ignore */ }
+    }
+  })
+
+  server.post('/_web/scan-multi-chat', async (request, reply) => {
+    const data = await (request as any).file()
+    if (!data) return reply.code(400).send({ error: 'No file uploaded' })
+
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chatlab-scan-'))
+    const tmpPath = path.join(tmpDir, data.filename || 'upload')
+
+    try {
+      const chunks: Buffer[] = []
+      for await (const chunk of data.file) {
+        chunks.push(chunk)
+      }
+      fs.writeFileSync(tmpPath, Buffer.concat(chunks))
+
+      const chats = await scanMultiChatFile(tmpPath)
+      return { chats }
+    } finally {
+      try { fs.unlinkSync(tmpPath) } catch { /* ignore */ }
+      try { fs.rmdirSync(tmpDir) } catch { /* ignore */ }
+    }
+  })
+
+  server.post('/_web/import', async (request, reply) => {
+    const data = await (request as any).file()
+    if (!data) return reply.code(400).send({ error: 'No file uploaded' })
+
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chatlab-import-'))
+    const tmpPath = path.join(tmpDir, data.filename || 'upload')
+
+    const chunks: Buffer[] = []
+    for await (const chunk of data.file) {
+      chunks.push(chunk)
+    }
+    fs.writeFileSync(tmpPath, Buffer.concat(chunks))
+
+    const formatId = (data.fields?.formatId as any)?.value as string | undefined
+    const chatIndexStr = (data.fields?.chatIndex as any)?.value as string | undefined
+    const chatIndex = chatIndexStr !== undefined ? parseInt(chatIndexStr, 10) : undefined
+
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    })
+
+    function sendEvent(event: string, data: unknown) {
+      reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+    }
+
+    try {
+      const nativeBinding = resolveNativeBinding()
+      const result = await streamImport(dbManager, tmpPath, {
+        formatId,
+        chatIndex,
+        nativeBinding,
+        onProgress: (p) => {
+          sendEvent('progress', p)
+        },
+      })
+
+      if (result.success) {
+        sendEvent('done', {
+          success: true,
+          sessionId: result.sessionId,
+          messageCount: result.messageCount,
+          memberCount: result.memberCount,
+        })
+      } else {
+        sendEvent('error', { success: false, error: result.error })
+      }
+    } catch (err) {
+      sendEvent('error', { success: false, error: err instanceof Error ? err.message : String(err) })
+    } finally {
+      reply.raw.end()
+      try { fs.unlinkSync(tmpPath) } catch { /* ignore */ }
+      try { fs.rmdirSync(tmpDir) } catch { /* ignore */ }
+    }
   })
 }

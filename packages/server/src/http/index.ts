@@ -88,7 +88,7 @@ export async function startHttpServer(options?: HttpServerOptions): Promise<{
   server = createServer()
   registerSystemRoutes(server, dbManager)
   registerSessionRoutes(server, dbManager)
-  registerWebRoutes(server, dbManager)
+  await registerWebRoutes(server, dbManager)
 
   // 托管 Web SPA 静态资源
   if (options?.webRoot && fs.existsSync(options.webRoot)) {
