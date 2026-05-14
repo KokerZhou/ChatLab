@@ -12,10 +12,15 @@ import { TOOL_REGISTRY } from './definitions'
 const CORE_TOOL_NAMES = new Set(TOOL_REGISTRY.filter((e) => e.category === 'core').map((e) => e.name))
 import { t as i18nT } from '../../i18n'
 import { preprocessMessages, type PreprocessableMessage } from '../preprocessor'
-import { formatMessageCompact } from './utils/format'
-import { countTokens } from '../tokenizer'
+import {
+  formatMessageCompact,
+  formatToolResultAsText,
+  truncateFormattedMessages,
+  anonymizeMessageNames,
+  countTokens,
+} from '@openchatlab/node-runtime'
 import { getSkillConfig } from '../skills'
-import type { SkillDef } from '../skills/types'
+import { createActivateSkillTool as sharedCreateActivateSkillTool } from '@openchatlab/node-runtime'
 
 const TRUNCATION_STRATEGY_MAP = new Map<string, TruncationStrategy>(
   TOOL_REGISTRY.filter((e) => e.truncationStrategy).map((e) => [e.name, e.truncationStrategy!])
@@ -23,57 +28,6 @@ const TRUNCATION_STRATEGY_MAP = new Map<string, TruncationStrategy>(
 
 // 导出类型
 export * from './types'
-
-/**
- * 将工具返回的结构化数据格式化为 LLM 友好的纯文本
- *
- * 从 JSON.stringify 改为纯文本，节省 token 且更易于 LLM 理解。
- * 元数据作为头部，消息逐行排列。
- */
-function formatToolResultAsText(details: Record<string, unknown>): string {
-  const lines: string[] = []
-  const messages = details.messages as string[] | undefined
-
-  for (const [key, value] of Object.entries(details)) {
-    if (key === 'messages') continue
-    if (value === undefined || value === null) continue
-
-    if (typeof value === 'object') {
-      if ('start' in (value as Record<string, unknown>) && 'end' in (value as Record<string, unknown>)) {
-        const range = value as { start: string; end: string }
-        lines.push(`${key}: ${range.start} ~ ${range.end}`)
-      } else if (Array.isArray(value)) {
-        lines.push(`${key}: ${value.join(', ')}`)
-      } else {
-        lines.push(`${key}: ${JSON.stringify(value)}`)
-      }
-    } else {
-      lines.push(`${key}: ${value}`)
-    }
-  }
-
-  if (messages && messages.length > 0) {
-    lines.push('')
-    let lastDate = ''
-    for (const msg of messages) {
-      const spaceIdx = msg.indexOf(' ')
-      const secondSpaceIdx = msg.indexOf(' ', spaceIdx + 1)
-      if (spaceIdx > 0 && secondSpaceIdx > 0) {
-        const date = msg.slice(0, spaceIdx)
-        const rest = msg.slice(spaceIdx + 1)
-        if (date !== lastDate) {
-          lines.push(`--- ${date} ---`)
-          lastDate = date
-        }
-        lines.push(rest)
-      } else {
-        lines.push(msg)
-      }
-    }
-  }
-
-  return lines.join('\n')
-}
 
 /**
  * 翻译 AgentTool 的描述（工具级 + 参数级）
@@ -142,7 +96,8 @@ function wrapWithPreprocessing(tool: AgentTool<any>, context: ToolContext): Agen
         const truncResult = truncateFormattedMessages(
           formatted,
           context.maxToolResultTokens,
-          TRUNCATION_STRATEGY_MAP.get(tool.name) ?? 'keep_last'
+          TRUNCATION_STRATEGY_MAP.get(tool.name) ?? 'keep_last',
+          countTokens
         )
         if (truncResult.wasTruncated) {
           formatted = truncResult.messages
@@ -175,80 +130,6 @@ function wrapWithPreprocessing(tool: AgentTool<any>, context: ToolContext): Agen
 }
 
 /**
- * Token-aware 截断：在 token 预算内保留尽可能多的消息
- */
-function truncateFormattedMessages(
-  formatted: string[],
-  maxTokens: number,
-  strategy: TruncationStrategy
-): { messages: string[]; wasTruncated: boolean } {
-  // 预留 token 给元数据头部和截断提示
-  const budget = maxTokens - 200
-
-  // 先快速估算总 token，如果未超预算则直接返回
-  let totalTokens = 0
-  for (const line of formatted) {
-    totalTokens += countTokens(line) + 1
-  }
-  if (totalTokens <= budget) {
-    return { messages: formatted, wasTruncated: false }
-  }
-
-  if (strategy === 'keep_first') {
-    let tokens = 0
-    let cutIndex = formatted.length
-    for (let i = 0; i < formatted.length; i++) {
-      tokens += countTokens(formatted[i]) + 1
-      if (tokens > budget) {
-        cutIndex = i
-        break
-      }
-    }
-    return { messages: formatted.slice(0, cutIndex), wasTruncated: cutIndex < formatted.length }
-  } else {
-    let tokens = 0
-    let cutIndex = 0
-    for (let i = formatted.length - 1; i >= 0; i--) {
-      tokens += countTokens(formatted[i]) + 1
-      if (tokens > budget) {
-        cutIndex = i + 1
-        break
-      }
-    }
-    return { messages: formatted.slice(cutIndex), wasTruncated: cutIndex > 0 }
-  }
-}
-
-/**
- * 昵称匿名化：用 U{senderId} 替代真实昵称
- * 就地修改 messages 的 senderName，返回映射表文本行
- */
-function anonymizeMessageNames(messages: PreprocessableMessage[], ownerPlatformId?: string): string {
-  const nameMap = new Map<number, { name: string; platformId?: string }>()
-  for (const msg of messages) {
-    if (msg.senderId != null && !nameMap.has(msg.senderId)) {
-      nameMap.set(msg.senderId, { name: msg.senderName, platformId: msg.senderPlatformId })
-    }
-  }
-
-  if (nameMap.size === 0) return ''
-
-  for (const msg of messages) {
-    if (msg.senderId != null) {
-      msg.senderName = `U${msg.senderId}`
-    }
-  }
-
-  const entries: string[] = []
-  for (const [id, { name, platformId }] of nameMap) {
-    const isOwner = ownerPlatformId && platformId === ownerPlatformId
-    entries.push(`U${id}=${name}${isOwner ? '(owner)' : ''}`)
-  }
-
-  return `[Name Map] ${entries.join(' | ')}`
-}
-
-/**
  * 获取所有可用的 AgentTool
  *
  * - Core 工具始终加载，不受 allowedTools 白名单影响
@@ -272,71 +153,18 @@ export function getAllTools(context: ToolContext, allowedTools?: string[]): Agen
 
 /**
  * 创建 activate_skill 元工具（AI 自选模式专用）
- * LLM 判断用户问题适合某个技能时调用此工具，获取技能的完整执行指导
+ * 委托给共享包的 createActivateSkillTool，注入 Electron 端的 getSkillConfig
  */
 export function createActivateSkillTool(
   chatType: 'group' | 'private',
   allowedTools?: string[],
   locale: string = 'zh-CN'
 ): AgentTool<any> {
-  const isZh = locale.startsWith('zh')
-
-  return {
-    name: 'activate_skill',
-    label: 'activate_skill',
-    description: isZh
-      ? '激活一个分析技能，获取该技能的详细执行指导'
-      : 'Activate an analysis skill and get its detailed execution instructions',
-    parameters: {
-      type: 'object',
-      properties: {
-        skill_id: {
-          type: 'string',
-          description: isZh ? '技能 ID' : 'Skill ID',
-        },
-      },
-      required: ['skill_id'],
-    },
-    execute: async (_toolCallId: string, params: { skill_id: string }, _signal?: AbortSignal, _onUpdate?: unknown) => {
-      const skill: SkillDef | null = getSkillConfig(params.skill_id)
-      if (!skill) {
-        return {
-          content: [{ type: 'text' as const, text: isZh ? '技能不存在' : 'Skill not found' }],
-          details: { skillId: params.skill_id, found: false },
-        }
-      }
-
-      if (skill.chatScope !== 'all' && skill.chatScope !== chatType) {
-        const scopeMsg = isZh
-          ? `该技能仅适用于${skill.chatScope === 'group' ? '群聊' : '私聊'}场景`
-          : `This skill is only applicable to ${skill.chatScope === 'group' ? 'group chat' : 'private chat'} scenarios`
-        return {
-          content: [{ type: 'text' as const, text: scopeMsg }],
-          details: { skillId: params.skill_id, found: true, applicable: false },
-        }
-      }
-
-      if (skill.tools.length > 0 && allowedTools && allowedTools.length > 0) {
-        const missing = skill.tools.filter((t) => !CORE_TOOL_NAMES.has(t) && !allowedTools.includes(t))
-        if (missing.length > 0) {
-          const msg = isZh
-            ? `当前助手缺少该技能所需的工具：${missing.join(', ')}`
-            : `Current assistant lacks tools required by this skill: ${missing.join(', ')}`
-          return {
-            content: [{ type: 'text' as const, text: msg }],
-            details: { skillId: params.skill_id, found: true, applicable: false, missingTools: missing },
-          }
-        }
-      }
-
-      const actionPrompt = isZh
-        ? '\n\n[System]: 你已成功加载该技能手册。现在，请立即、自动地开始执行步骤1，调用相关的基础数据工具，不要等待用户的进一步确认！'
-        : '\n\n[System]: You have successfully loaded this skill manual. Now, immediately start executing step 1 by calling the relevant data tools. Do not wait for further user confirmation!'
-
-      return {
-        content: [{ type: 'text' as const, text: `${skill.prompt}${actionPrompt}` }],
-        details: { skillId: params.skill_id, found: true, applicable: true },
-      }
-    },
-  }
+  return sharedCreateActivateSkillTool({
+    chatType,
+    allowedTools,
+    locale,
+    getSkillConfig: (id) => getSkillConfig(id),
+    coreToolNames: CORE_TOOL_NAMES,
+  })
 }
