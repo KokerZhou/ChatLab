@@ -5,12 +5,13 @@
 
 import * as fs from 'fs'
 import * as path from 'path'
-import { getLogsDir, ensureDir } from '../paths'
+import { getPathProvider } from '../path-context'
+import { ensureDir } from '../paths'
 
 let headerWritten = false
 
 function getLogPath(): string {
-  return path.join(getLogsDir(), 'api.log')
+  return path.join(getPathProvider().getLogsDir(), 'api.log')
 }
 
 function formatPathForLog(filePath: string): string {
@@ -22,7 +23,7 @@ function ensureHeader(): void {
   headerWritten = true
   try {
     const logPath = getLogPath()
-    ensureDir(getLogsDir())
+    ensureDir(getPathProvider().getLogsDir())
     const isNew = !fs.existsSync(logPath) || fs.statSync(logPath).size === 0
     if (isNew) {
       fs.writeFileSync(logPath, `Local Path:  ${formatPathForLog(logPath)}\n\n`, 'utf-8')

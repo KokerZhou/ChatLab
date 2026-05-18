@@ -15,14 +15,15 @@ import {
 import { BetterSqliteAdapter, writeParseResultToDb } from '@openchatlab/node-runtime'
 import type { ParseResult } from '../../../src/types/base'
 import { migrateDatabase, needsMigration, CURRENT_SCHEMA_VERSION } from './migrations'
-import { getDatabaseDir, getCacheDir, ensureDir } from '../paths'
+import { getPathProvider } from '../path-context'
+import { ensureDir } from '../paths'
 import { deleteSessionCache } from './sessionCache'
 
 /**
  * 获取数据库目录
  */
 function getDbDir(): string {
-  return getDatabaseDir()
+  return getPathProvider().getDatabaseDir()
 }
 
 /**
@@ -155,7 +156,7 @@ export function deleteSession(sessionId: string): boolean {
     if (fs.existsSync(shmPath)) {
       fs.unlinkSync(shmPath)
     }
-    const cacheDir = getCacheDir()
+    const cacheDir = getPathProvider().getCacheDir()
     deleteSessionCache(sessionId, cacheDir)
     deleteSessionCache(sessionId, path.join(cacheDir, 'query'))
     return true

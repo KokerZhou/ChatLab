@@ -5,12 +5,12 @@
 
 import * as fs from 'fs'
 import * as path from 'path'
-import { getAiDataDir } from '../../paths'
+import { getPathProvider } from '../../path-context'
 import { aiLogger } from '../logger'
 import type { ModelDefinition } from './model-types'
 
 function getStorePath(): string {
-  return path.join(getAiDataDir(), 'custom-models.json')
+  return path.join(getPathProvider().getAiDataDir(), 'custom-models.json')
 }
 
 function readStore(): ModelDefinition[] {

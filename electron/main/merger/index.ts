@@ -13,7 +13,7 @@ import type { MergerDataSource, MergerSourceMeta, ChatLabOutput } from '@opencha
 import { parseFileSync, detectFormat } from '../parser'
 import { importData } from '../database/core'
 import { TempDbReader } from './tempCache'
-import { getDownloadsDir } from '../paths'
+import { getPathProvider } from '../path-context'
 import type { ParseResult, ChatPlatform, ChatType } from '../../../src/types/base'
 import type {
   ChatLabFormat,
@@ -27,7 +27,7 @@ import type {
 } from '../../../src/types/format'
 
 function getDefaultOutputDir(): string {
-  return getDownloadsDir()
+  return getPathProvider().getDownloadsDir()
 }
 
 function ensureOutputDir(dir: string): void {

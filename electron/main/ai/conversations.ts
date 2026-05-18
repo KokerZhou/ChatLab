@@ -6,7 +6,7 @@
  */
 
 import { AIConversationManager } from '@openchatlab/node-runtime'
-import { getAiDataDir } from '../paths'
+import { getPathProvider } from '../path-context'
 import { aiLogger } from './logger'
 
 export type { AIConversation, AIMessage, AIMessageRole, ContentBlock, TokenUsageData } from '@openchatlab/node-runtime'
@@ -15,7 +15,7 @@ let manager: AIConversationManager | null = null
 
 export function getManager(): AIConversationManager {
   if (!manager) {
-    manager = new AIConversationManager(getAiDataDir(), {
+    manager = new AIConversationManager(getPathProvider().getAiDataDir(), {
       logger: {
         warn(category, message, extra) {
           aiLogger.warn(category, message, extra)

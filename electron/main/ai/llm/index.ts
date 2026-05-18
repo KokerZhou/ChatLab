@@ -6,7 +6,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { randomUUID } from 'crypto'
-import { getAiDataDir } from '../../paths'
+import { getPathProvider } from '../../path-context'
 import type { LLMProvider, ProviderInfo, AIServiceConfig, AIConfigStore } from './types'
 import { MAX_CONFIG_COUNT } from './types'
 import { aiLogger } from '../logger'
@@ -95,7 +95,7 @@ let CONFIG_PATH: string | null = null
 
 function getConfigPath(): string {
   if (CONFIG_PATH) return CONFIG_PATH
-  CONFIG_PATH = path.join(getAiDataDir(), 'llm-config.json')
+  CONFIG_PATH = path.join(getPathProvider().getAiDataDir(), 'llm-config.json')
   return CONFIG_PATH
 }
 

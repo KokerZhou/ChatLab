@@ -8,13 +8,14 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { ChatType, type ParsedMember, type ParsedMessage } from '../../../src/types/base'
 import type { ParsedMeta } from '../parser'
-import { getTempDir as getAppTempDir, ensureDir } from '../paths'
+import { getPathProvider } from '../path-context'
+import { ensureDir } from '../paths'
 
 /**
  * 获取临时数据库目录
  */
 function getTempDir(): string {
-  const dir = getAppTempDir()
+  const dir = getPathProvider().getTempDir()
   ensureDir(dir)
   return dir
 }

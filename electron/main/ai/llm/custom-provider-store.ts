@@ -6,12 +6,12 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { randomUUID } from 'crypto'
-import { getAiDataDir } from '../../paths'
+import { getPathProvider } from '../../path-context'
 import { aiLogger } from '../logger'
 import type { ProviderDefinition } from './model-types'
 
 function getStorePath(): string {
-  return path.join(getAiDataDir(), 'custom-providers.json')
+  return path.join(getPathProvider().getAiDataDir(), 'custom-providers.json')
 }
 
 function readStore(): ProviderDefinition[] {

@@ -6,13 +6,13 @@
  */
 
 import { AiLogger } from '@openchatlab/node-runtime'
-import { getLogsDir } from '../paths'
+import { getPathProvider } from '../path-context'
 
 export { extractErrorInfo, extractErrorStack } from '@openchatlab/node-runtime'
 
 let _instance: AiLogger | null = null
 function getInstance(): AiLogger {
-  if (!_instance) _instance = new AiLogger(getLogsDir())
+  if (!_instance) _instance = new AiLogger(getPathProvider().getLogsDir())
   return _instance
 }
 

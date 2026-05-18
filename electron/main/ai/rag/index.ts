@@ -7,7 +7,7 @@
 
 import { initRag, type RagLogger } from '@openchatlab/node-runtime'
 import { aiLogger } from '../logger'
-import { getAiDataDir } from '../../paths'
+import { getPathProvider } from '../../path-context'
 import { getDefaultAssistantConfig } from '../llm'
 
 let _initialized = false
@@ -23,7 +23,7 @@ function ensureInit(): void {
   }
 
   initRag({
-    aiDataDir: getAiDataDir(),
+    aiDataDir: getPathProvider().getAiDataDir(),
     logger,
     getLLMConfig: () => {
       const cfg = getDefaultAssistantConfig()
