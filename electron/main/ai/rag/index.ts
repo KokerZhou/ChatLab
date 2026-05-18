@@ -1,17 +1,59 @@
 /**
- * RAG 模块主入口
+ * RAG module — Electron thin wrapper
  *
- * 提供 RAG（检索增强生成）功能：
- * - Embedding 服务（API 方式，多配置模式）
- * - 会话级切片
- * - 向量存储（SQLite BLOB + 内存 LRU）
- * - Semantic Pipeline
+ * Delegates all logic to @openchatlab/node-runtime.
+ * Provides Electron-specific path / logger / LLM config injection.
  */
 
-// ==================== 配置管理 ====================
+import { initRag, type RagLogger } from '@openchatlab/node-runtime'
+import { aiLogger } from '../logger'
+import { getAiDataDir } from '../../paths'
+import { getDefaultAssistantConfig } from '../llm'
+
+let _initialized = false
+
+function ensureInit(): void {
+  if (_initialized) return
+  _initialized = true
+
+  const logger: RagLogger = {
+    info: (category, message, data) => aiLogger.info(category, message, data),
+    warn: (category, message, data) => aiLogger.warn(category, message, data),
+    error: (category, message, data) => aiLogger.error(category, message, data),
+  }
+
+  initRag({
+    aiDataDir: getAiDataDir(),
+    logger,
+    getLLMConfig: () => {
+      const cfg = getDefaultAssistantConfig()
+      if (!cfg) return null
+      return {
+        provider: cfg.provider,
+        apiKey: cfg.apiKey || undefined,
+        baseUrl: cfg.baseUrl,
+      }
+    },
+    getAssistantConfig: () => {
+      const cfg = getDefaultAssistantConfig()
+      if (!cfg) return null
+      return {
+        provider: cfg.provider,
+        model: cfg.model,
+        baseUrl: cfg.baseUrl,
+        maxTokens: cfg.maxTokens,
+        apiFormat: cfg.apiFormat,
+        disableThinking: cfg.disableThinking,
+        isReasoningModel: cfg.isReasoningModel,
+        apiKey: cfg.apiKey || undefined,
+      }
+    },
+  })
+}
+
+// ==================== Config management ====================
 
 export {
-  // 新版多配置管理
   loadEmbeddingConfigStore,
   saveEmbeddingConfigStore,
   getAllEmbeddingConfigs,
@@ -23,15 +65,14 @@ export {
   setActiveEmbeddingConfig,
   isEmbeddingEnabled,
   getActiveEmbeddingConfigId,
-  // 旧版兼容
   loadRAGConfig,
   saveRAGConfig,
   updateRAGConfig,
   resetRAGConfig,
   getVectorStoreDir,
-} from './config'
+} from '@openchatlab/node-runtime'
 
-// ==================== 类型定义 ====================
+// ==================== Types ====================
 
 export type {
   RAGConfig,
@@ -49,23 +90,38 @@ export type {
   VectorStoreStats,
   SemanticPipelineOptions,
   SemanticPipelineResult,
-} from './types'
+} from '@openchatlab/node-runtime'
 
-export { DEFAULT_RAG_CONFIG, DEFAULT_EMBEDDING_CONFIG_STORE, MAX_EMBEDDING_CONFIG_COUNT } from './types'
+export {
+  DEFAULT_RAG_CONFIG,
+  DEFAULT_EMBEDDING_CONFIG_STORE,
+  MAX_EMBEDDING_CONFIG_COUNT,
+} from '@openchatlab/node-runtime'
 
-// ==================== Embedding 服务 ====================
+// ==================== Embedding service ====================
 
-export { getEmbeddingService, resetEmbeddingService, validateEmbeddingConfig } from './embedding'
+export { getEmbeddingService, resetEmbeddingService, validateEmbeddingConfig } from '@openchatlab/node-runtime'
 
-// ==================== 切片服务 ====================
+// ==================== Chunking ====================
 
-export { getSessionChunks, getSessionChunk, formatSessionChunk } from './chunking'
-export type { ChunkingOptions, SessionMessage, SessionInfo } from './chunking'
+export { getSessionChunks, getSessionChunk, formatSessionChunk } from '@openchatlab/node-runtime'
 
-// ==================== 向量存储 ====================
+export type { ChunkingOptions, SessionMessage, SessionInfo } from '@openchatlab/node-runtime'
 
-export { getVectorStore, resetVectorStore, getVectorStoreStats, SQLiteVectorStore, MemoryVectorStore } from './store'
+// ==================== Vector store ====================
+
+export {
+  getVectorStore,
+  resetVectorStore,
+  getVectorStoreStats,
+  SQLiteVectorStore,
+  MemoryVectorStore,
+} from '@openchatlab/node-runtime'
 
 // ==================== Pipeline ====================
 
-export { executeSemanticPipeline } from './pipeline'
+export { executeSemanticPipeline } from '@openchatlab/node-runtime'
+
+// ==================== Init hook ====================
+
+export { ensureInit as ensureRagInit }

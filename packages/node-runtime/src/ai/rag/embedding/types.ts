@@ -1,6 +1,5 @@
 /**
- * Embedding 服务类型定义
- * 从 ../types.ts 重导出，方便引用
+ * Embedding service type re-exports
  */
 
 export type { IEmbeddingService, EmbeddingResult, EmbeddingConfig, EmbeddingServiceConfig } from '../types'

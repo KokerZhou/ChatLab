@@ -1,6 +1,5 @@
 /**
- * 向量存储类型定义
- * 从 ../types.ts 重导出，方便引用
+ * Vector store type re-exports
  */
 
 export type { IVectorStore, VectorSearchResult, VectorStoreStats, VectorStoreConfig } from '../types'
