@@ -1,5 +1,59 @@
 [
   {
+    "version": "0.24.0",
+    "date": "2026-06-03",
+    "summary": "Adds CLI Web authentication and data directory migration, unifies cross-platform HTTP routes, and fixes data migration, AI settings, and import refresh issues.",
+    "changes": [
+      {
+        "type": "feat",
+        "items": [
+          "Add Markdown generation for multilingual release notes",
+          "Allow legacy data migration prompts to be ignored from storage management",
+          "[CLI Web] Add a login page, token authentication, and persistent login state",
+          "[CLI Web] Support data directory migration from Web settings",
+          "[CLI] Add the --require-auth flag to protect /_web/* API access",
+          "[Desktop] Add an internal HTTP service so the frontend can use shared service adapters"
+        ]
+      },
+      {
+        "type": "fix",
+        "items": [
+          "Fix multiple edge cases in data directory and database migrations to prevent missing legacy columns or failed reads after path changes",
+          "Fix legacy data migration prompts appearing incorrectly when no legacy data exists or after directory changes",
+          "Fix sidebar message counts not refreshing after incremental imports",
+          "Fix sidebar collapsed state being lost after refresh because it was stored only in sessionStorage",
+          "Fix fetch-models and validate buttons not being enabled when editing AI settings with a saved key",
+          "Fix stability issues in shared AI SSE streaming",
+          "Fix custom data source creation not requiring a token",
+          "[Desktop] Move chart plugin computation to a worker to avoid blocking the main thread"
+        ]
+      },
+      {
+        "type": "refactor",
+        "items": [
+          "Extract the @openchatlab/http-routes shared package to unify HTTP route implementations across CLI Web and Desktop",
+          "Move AI settings, assistants, skills, conversations, streaming responses, cache, and merge APIs to shared HTTP routes",
+          "Trim the desktop IPC bridge by removing legacy AI, session index, LLM, Assistant, Skill, and NLP compatibility handlers",
+          "Unify the frontend service layer to reduce Electron/Web mode branching"
+        ]
+      },
+      {
+        "type": "perf",
+        "items": [
+          "Minify the main process bundle and lazy-load the tiktoken rank table to reduce startup and package size pressure"
+        ]
+      },
+      {
+        "type": "ci",
+        "items": ["Fix the Windows release workflow zstd cache issue and add CLI update notes to release notes"]
+      },
+      {
+        "type": "chore",
+        "items": ["Align Node type-check projects to cover desktop and shared Node code"]
+      }
+    ]
+  },
+  {
     "version": "0.23.1",
     "date": "2026-06-01",
     "summary": "Adds a clb command alias and port conflict detection with actionable guidance. Fixes daemon silent exit and several UI issues in dark mode.",
