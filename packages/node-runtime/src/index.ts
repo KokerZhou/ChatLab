@@ -355,6 +355,8 @@ export {
   SemanticIndexConfigStore,
   SEMANTIC_INDEX_CONFIG_FILE,
   isSemanticIndexConfigured,
+  persistSemanticIndexConfig,
+  resolveSemanticIndexApiKeySet,
 } from './semantic-index'
 export type {
   SemanticIndexServiceOptions,

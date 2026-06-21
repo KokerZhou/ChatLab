@@ -18,10 +18,12 @@
     "@electron-toolkit/preload": "^3.0.1",
     "@electron-toolkit/utils": "^4.0.0",
     "@fastify/multipart": "^10.0.0",
+    "@huggingface/transformers": "^4.2.0",
     "@node-rs/jieba": "^2.0.1",
     "better-sqlite3": "^12.4.6",
     "electron-updater": "^6.6.2",
-    "i18next": "^25.8.5"
+    "i18next": "^25.8.5",
+    "sqlite-vec": "^0.1.9"
   },
   "devDependencies": {
     "@electron-toolkit/tsconfig": "^1.0.1",

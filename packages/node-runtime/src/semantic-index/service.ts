@@ -74,6 +74,34 @@ export interface SemanticIndexServiceOptions {
 /** 语义索引 API Key 固定存储在此 auth profile；config 只保存引用，不保存明文 */
 export const SEMANTIC_INDEX_AUTH_PROFILE = 'semantic-index-embedding'
 
+/**
+ * 仅持久化配置与（可选）API Key，不依赖向量库。
+ * 供 SemanticIndexService.setConfig 复用，也供 service 不可用（如 sqlite-vec 加载失败）
+ * 的降级路径直接写配置，保证 API 模式下 key 不被丢弃。
+ */
+export function persistSemanticIndexConfig(
+  configStore: SemanticIndexConfigStore,
+  config: SemanticIndexConfigInput,
+  options?: { apiKey?: string; writeAuthProfile?: (name: string, profile: AuthProfile) => void }
+): SemanticIndexConfig {
+  let next = config
+  if (options?.apiKey && config.mode === 'api' && config.api) {
+    const writer = options.writeAuthProfile ?? defaultWriteAuthProfile
+    writer(SEMANTIC_INDEX_AUTH_PROFILE, { type: 'api_key', provider: 'semantic-index', key: options.apiKey })
+    next = { ...config, api: { ...config.api, authProfile: SEMANTIC_INDEX_AUTH_PROFILE } }
+  }
+  return configStore.set(next)
+}
+
+/** 当前配置的 API 模式是否已设置可用 Key（不返回明文）。service 与降级路径共用。 */
+export function resolveSemanticIndexApiKeySet(
+  config: SemanticIndexConfig,
+  resolveApiKey: (provider: string, authProfile?: string) => string = defaultResolveApiKey
+): boolean {
+  if (config.mode !== 'api' || !config.api || !config.api.authProfile) return false
+  return resolveApiKey('semantic-index', config.api.authProfile) !== ''
+}
+
 export interface SemanticIndexSessionStatus {
   sessionId: string
   enabled: boolean
@@ -242,10 +270,7 @@ export class SemanticIndexService {
 
   /** 当前 API 模式是否已配置可用的 API Key（不返回明文，仅布尔） */
   hasApiKey(): boolean {
-    const cfg = this.configStore.get()
-    if (cfg.mode !== 'api' || !cfg.api || !cfg.api.authProfile) return false
-    const resolve = this.options.embedderFactoryDeps?.resolveApiKey ?? defaultResolveApiKey
-    return resolve('semantic-index', cfg.api.authProfile) !== ''
+    return resolveSemanticIndexApiKeySet(this.configStore.get(), this.options.embedderFactoryDeps?.resolveApiKey)
   }
 
   /**
@@ -253,13 +278,10 @@ export class SemanticIndexService {
    * 传入 apiKey 时写入固定 auth profile，config 内只保存引用，绝不持久化明文。
    */
   setConfig(config: SemanticIndexConfigInput, options?: { apiKey?: string }): SemanticIndexConfig {
-    let next = config
-    if (options?.apiKey && config.mode === 'api' && config.api) {
-      const writer = this.options.writeAuthProfile ?? defaultWriteAuthProfile
-      writer(SEMANTIC_INDEX_AUTH_PROFILE, { type: 'api_key', provider: 'semantic-index', key: options.apiKey })
-      next = { ...config, api: { ...config.api, authProfile: SEMANTIC_INDEX_AUTH_PROFILE } }
-    }
-    const saved = this.configStore.set(next)
+    const saved = persistSemanticIndexConfig(this.configStore, config, {
+      apiKey: options?.apiKey,
+      writeAuthProfile: this.options.writeAuthProfile,
+    })
     this.embedder = null
     this.embedderModelId = null
     // 关闭全局开关时停止所有在跑/排队的建索引任务（保留已建立的部分数据）

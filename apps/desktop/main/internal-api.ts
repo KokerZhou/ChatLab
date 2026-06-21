@@ -26,6 +26,7 @@ import {
   createSemanticIndexService,
 } from '@openchatlab/node-runtime'
 import type { StreamImportDeps, SemanticIndexService } from '@openchatlab/node-runtime'
+import { getLoadablePath as getSqliteVecLoadablePath } from 'sqlite-vec'
 import multipart from '@fastify/multipart'
 import type { ConfigStorage } from '@openchatlab/node-runtime'
 import {
@@ -42,7 +43,7 @@ import { getManager as getAIChatManager } from './ai/chats'
 import { getManager as getAssistantManager } from './ai/assistant/manager'
 import { getManager as getSkillManager } from './ai/skills/manager'
 import { createElectronRunAgentStream } from './ai/agent-stream-runner'
-import { executeElectronAiTool } from './ai/tools/debug-executor'
+import { createExecuteElectronAiTool } from './ai/tools/debug-executor'
 import { assertDesktopDataDirCompatible, getDesktopAppVersion } from './runtime-compat'
 
 export interface InternalEndpoint {
@@ -57,6 +58,16 @@ let mergeCache: MergeSessionCache | null = null
 let semanticIndexService: SemanticIndexService | null = null
 
 const JSON_BODY_LIMIT = 50 * 1024 * 1024 // 50 MB
+
+/**
+ * 加载 sqlite-vec 原生扩展。打包后 require.resolve 返回的是 app.asar 内路径，
+ * 而 loadExtension -> dlopen 无法读取 asar，需指向 asarUnpack 解包出的真实路径。
+ * 开发态路径不含 app.asar，replace 为空操作。
+ */
+function loadSqliteVec(db: { loadExtension(file: string): void }): void {
+  const loadablePath = getSqliteVecLoadablePath().replace('app.asar', 'app.asar.unpacked')
+  db.loadExtension(loadablePath)
+}
 
 function createFileConfigStorage(aiDataDir: string): ConfigStorage {
   return {
@@ -111,7 +122,7 @@ export async function startInternalServer(pathProvider: PathProvider): Promise<I
     // 语义索引 service：每进程一个实例，启动时仅做状态恢复。构建失败（如 sqlite-vec
     // 扩展加载失败）不应阻断 server，路由会优雅跳过。
     try {
-      newSemanticIndexService = createSemanticIndexService({ pathProvider, sessionAdapter })
+      newSemanticIndexService = createSemanticIndexService({ pathProvider, sessionAdapter, loadSqliteVec })
       newSemanticIndexService.recover()
     } catch (err) {
       console.warn('[semantic-index] service unavailable:', err instanceof Error ? err.message : String(err))
@@ -168,7 +179,7 @@ export async function startInternalServer(pathProvider: PathProvider): Promise<I
       defaultUserDataDir: getDefaultUserDataDir(),
       isCustomDataDir: path.resolve(getUserDataDir()) !== path.resolve(getDefaultUserDataDir()),
       runAgentStream: createElectronRunAgentStream(newSemanticIndexService ?? undefined),
-      executeAiTool: executeElectronAiTool,
+      executeAiTool: createExecuteElectronAiTool(newSemanticIndexService ?? undefined),
     }
 
     newServer = Fastify({ logger: false, bodyLimit: JSON_BODY_LIMIT })

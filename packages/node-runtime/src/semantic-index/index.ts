@@ -66,6 +66,9 @@ export type { EmbedderFactoryDeps } from './embedder-factory'
 export {
   SemanticIndexService,
   createSemanticIndexService,
+  persistSemanticIndexConfig,
+  resolveSemanticIndexApiKeySet,
+  SEMANTIC_INDEX_AUTH_PROFILE,
   SEMANTIC_INDEX_DB_FILE,
   SEMANTIC_INDEX_CONFIG_FILE,
 } from './service'

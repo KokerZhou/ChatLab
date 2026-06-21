@@ -23,10 +23,23 @@ files:
   - '!node_modules/@node-rs/jieba/idf.txt'
   - '!node_modules/@node-rs/jieba/dict.js'
   - '!node_modules/@node-rs/jieba/dict.d.ts'
+  # onnxruntime-node 自带 darwin/linux/win32 全平台全架构原生二进制（合计 ~210M）。
+  # 只保留当前构建目标 ${platform}/${arch} 一份，避免 mac 包含 Linux/Windows 二进制（反之亦然）。
+  # 先排除整组 bin/napi-v6，再按目标平台/架构重新包含；electron-builder 后写规则覆盖先写规则。
+  # ${platform} -> darwin/linux/win32，${arch} -> x64/arm64，正好匹配该包目录结构。
+  - '!node_modules/onnxruntime-node/bin/napi-v6/**'
+  - 'node_modules/onnxruntime-node/bin/napi-v6/${platform}/${arch}/**'
 # 哪些文件将不会被压缩，而是解压到构建目录
+# 仅含 .dylib（无 .node）的原生包不会被 electron-builder 自动解包，必须显式列出，
+# 否则 dlopen 无法从 asar 内加载：
+# - sqlite-vec*：vec0.dylib（SQLite 扩展）
+# - onnxruntime-node：onnxruntime_binding.node + libonnxruntime.*.dylib（本地向量模型推理）
+# - @img/**：sharp 原生绑定与 libvips-cpp.dylib（transformers 本地模型 eager require sharp）
 asarUnpack:
   - resources/**
   - node_modules/sqlite-vec*/**
+  - node_modules/onnxruntime-node/**
+  - node_modules/@img/**
 
 # Windows 平台配置
 win:

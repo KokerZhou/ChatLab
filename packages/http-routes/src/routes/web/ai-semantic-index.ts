@@ -13,6 +13,8 @@ import {
   SemanticIndexConfigStore,
   SEMANTIC_INDEX_CONFIG_FILE,
   isSemanticIndexConfigured,
+  persistSemanticIndexConfig,
+  resolveSemanticIndexApiKeySet,
 } from '@openchatlab/node-runtime'
 
 export function registerSemanticIndexRoutes(server: FastifyInstance, ctx: HttpRouteContext): void {
@@ -23,15 +25,24 @@ export function registerSemanticIndexRoutes(server: FastifyInstance, ctx: HttpRo
   if (!service) {
     if (ctx.aiDataDir) {
       const configStore = new SemanticIndexConfigStore(path.join(ctx.aiDataDir, SEMANTIC_INDEX_CONFIG_FILE))
-      server.get('/_web/ai/semantic-index/config', async () => ({
-        config: configStore.get(),
-        apiKeySet: false,
-        configured: isSemanticIndexConfigured(configStore.get()),
-      }))
-      server.put<{ Body: { config: SemanticIndexConfig } }>('/_web/ai/semantic-index/config', async (request) => {
-        const config = configStore.set(request.body.config)
-        return { config, apiKeySet: false, configured: isSemanticIndexConfigured(config) }
+      const configResponse = (config: SemanticIndexConfig) => ({
+        config,
+        apiKeySet: resolveSemanticIndexApiKeySet(config, ctx.resolveApiKey),
+        configured: isSemanticIndexConfigured(config),
       })
+      server.get('/_web/ai/semantic-index/config', async () => configResponse(configStore.get()))
+      // 向量库不可用时仍允许写配置与 API Key（key 落 auth-profiles，不依赖向量库），
+      // 否则 API 模式在降级期无法保存 key，恢复后会出现"已配置但无法检索"。
+      server.put<{ Body: { config: SemanticIndexConfig; apiKey?: string } }>(
+        '/_web/ai/semantic-index/config',
+        async (request) => {
+          const config = persistSemanticIndexConfig(configStore, request.body.config, {
+            apiKey: request.body.apiKey,
+            writeAuthProfile: ctx.writeAuthProfile,
+          })
+          return configResponse(config)
+        }
+      )
     }
     server.get('/_web/ai/semantic-index/enabled', async () => ({ sessions: [] }))
     server.get('/_web/ai/semantic-index/status', async () => ({ status: null }))

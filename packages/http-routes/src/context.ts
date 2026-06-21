@@ -8,6 +8,7 @@
 
 import type { PathProvider } from '@openchatlab/core'
 import type { ChartAutoMode } from '@openchatlab/shared-types'
+import type { AuthProfile } from '@openchatlab/config'
 import type {
   DatabaseManager,
   DataDirSwitchResult,
@@ -56,6 +57,14 @@ export interface HttpRouteContext {
 
   /** 语义索引共享 service — 可选，路由在缺失时优雅跳过 */
   semanticIndexService?: SemanticIndexService
+
+  /**
+   * auth-profiles 读写注入 — 仅语义索引「向量库不可用」降级路径使用（其余路径走 service 内部注入）。
+   * 缺省时 helper 回退到 @openchatlab/config 的真实读写（生产行为不变）；测试可注入内存实现，
+   * 避免降级配置写入真实 ~/.chatlab。
+   */
+  resolveApiKey?: (provider: string, authProfile?: string) => string
+  writeAuthProfile?: (name: string, profile: AuthProfile) => void
 
   /** Cache/storage — platform-specific (optional) */
   openDirectory?: (dirPath: string) => Promise<void>

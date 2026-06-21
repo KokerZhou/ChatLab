@@ -6,7 +6,13 @@ import test from 'node:test'
 import { CHAT_DB_SCHEMA, FTS_TABLE_SCHEMA } from '@openchatlab/core'
 import { openBetterSqliteDatabase } from '../better-sqlite3-adapter'
 import { buildFtsIndex } from '../fts'
-import { SemanticIndexService } from './service'
+import {
+  SemanticIndexService,
+  persistSemanticIndexConfig,
+  resolveSemanticIndexApiKeySet,
+  SEMANTIC_INDEX_AUTH_PROFILE,
+} from './service'
+import { SemanticIndexConfigStore } from './config'
 import { SemanticIndexStateStore } from './session-state-store'
 import { computeDbPathHash } from './chunker-config'
 import { QWEN3_PROFILE } from './embedding/profiles'
@@ -516,6 +522,49 @@ test('searchForTool applies timeFilter to exclude out-of-range chunks', async ()
   assert.equal(future.returned, 0)
   service.close()
   db.close()
+})
+
+function tempPersistStore(prefix: string): SemanticIndexConfigStore {
+  const baseDir = fs.existsSync('/private/tmp') ? '/private/tmp' : os.tmpdir()
+  const dir = fs.mkdtempSync(path.join(baseDir, prefix))
+  return new SemanticIndexConfigStore(path.join(dir, 'ai', 'semantic-index-config.json'))
+}
+
+// 回归：向量库不可用的降级路径（HTTP stub PUT 复用此 helper）必须持久化 API Key，
+// 否则 API 模式在降级期会丢 key，恢复后出现"已配置但 hasApiKey=false 无法检索"。
+test('persistSemanticIndexConfig (degraded path) saves API key by reference, never plaintext', () => {
+  const store = tempPersistStore('chatlab-si-persist-')
+  const authProfiles = new Map<string, { key: string }>()
+
+  const saved = persistSemanticIndexConfig(
+    store,
+    { version: 1, mode: 'api', local: { modelId: '' }, api: { baseUrl: 'https://x', model: 'emb' } },
+    { apiKey: 'sk-degraded-1', writeAuthProfile: (name, profile) => authProfiles.set(name, { key: profile.key }) }
+  )
+
+  assert.equal(saved.api?.authProfile, SEMANTIC_INDEX_AUTH_PROFILE)
+  assert.ok(!JSON.stringify(saved).includes('sk-degraded-1'))
+  assert.equal(authProfiles.get(SEMANTIC_INDEX_AUTH_PROFILE)?.key, 'sk-degraded-1')
+  // 已落盘：重新读取仍保留引用
+  assert.equal(store.get().api?.authProfile, SEMANTIC_INDEX_AUTH_PROFILE)
+
+  const resolve = (_p: string, ap?: string) => (ap ? (authProfiles.get(ap)?.key ?? '') : '')
+  assert.equal(resolveSemanticIndexApiKeySet(saved, resolve), true)
+})
+
+test('persistSemanticIndexConfig ignores apiKey in local mode (no auth profile write)', () => {
+  const store = tempPersistStore('chatlab-si-persist-local-')
+  const authProfiles = new Map<string, { key: string }>()
+
+  const saved = persistSemanticIndexConfig(
+    store,
+    { version: 1, mode: 'local', local: { modelId: 'qwen3' }, api: null },
+    { apiKey: 'should-be-ignored', writeAuthProfile: (name, profile) => authProfiles.set(name, { key: profile.key }) }
+  )
+
+  assert.equal(saved.mode, 'local')
+  assert.equal(authProfiles.size, 0)
+  assert.equal(resolveSemanticIndexApiKeySet(saved), false)
 })
 
 test('recover marks stale running as paused without auto-resuming', async () => {

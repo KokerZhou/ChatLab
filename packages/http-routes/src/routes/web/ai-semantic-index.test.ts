@@ -1,7 +1,12 @@
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import type { SemanticIndexService } from '@openchatlab/node-runtime'
+import { SEMANTIC_INDEX_CONFIG_FILE } from '@openchatlab/node-runtime'
+import type { AuthProfile } from '@openchatlab/config'
 import type { HttpRouteContext } from '../../context'
 import { registerSemanticIndexRoutes } from './ai-semantic-index'
 
@@ -130,5 +135,69 @@ describe('semantic-index routes', () => {
     const resp = await bare.inject({ method: 'GET', url: '/_web/ai/semantic-index/config' })
     assert.equal(resp.statusCode, 404)
     await bare.close()
+  })
+})
+
+// 向量库不可用（service 缺失）但 aiDataDir 存在时，仍注册「仅配置」降级路由。
+// 用注入的内存 auth-profile 读写验证 API Key 落引用且不写真实 ~/.chatlab。
+describe('semantic-index routes (degraded: service absent, aiDataDir present)', () => {
+  const SECRET = 'sk-degraded-secret'
+  const AUTH_PROFILE = 'semantic-index-embedding'
+  const authProfiles = new Map<string, AuthProfile>()
+  let app: FastifyInstance
+  let aiDataDir: string
+
+  before(async () => {
+    const baseDir = fs.existsSync('/private/tmp') ? '/private/tmp' : os.tmpdir()
+    aiDataDir = fs.mkdtempSync(path.join(baseDir, 'chatlab-si-route-'))
+    app = Fastify()
+    const ctx = {
+      // semanticIndexService intentionally omitted -> degraded config-only routes
+      aiDataDir,
+      resolveApiKey: (_provider: string, authProfile?: string) =>
+        authProfile ? (authProfiles.get(authProfile)?.key ?? '') : '',
+      writeAuthProfile: (name: string, profile: AuthProfile) => authProfiles.set(name, profile),
+    } as unknown as HttpRouteContext
+    registerSemanticIndexRoutes(app, ctx)
+    await app.ready()
+  })
+
+  after(async () => {
+    await app.close()
+    fs.rmSync(aiDataDir, { recursive: true, force: true })
+  })
+
+  it('PUT API config + apiKey saves key by reference and reports apiKeySet', async () => {
+    const config = {
+      version: 1,
+      mode: 'api',
+      local: { modelId: '' },
+      api: { baseUrl: 'https://emb.example', model: 'text-embedding-3-small' },
+    }
+    const resp = await app.inject({
+      method: 'PUT',
+      url: '/_web/ai/semantic-index/config',
+      payload: { config, apiKey: SECRET },
+    })
+    assert.equal(resp.statusCode, 200)
+    const body = resp.json()
+    assert.equal(body.config.api.authProfile, AUTH_PROFILE)
+    assert.equal(body.apiKeySet, true)
+    assert.equal(authProfiles.get(AUTH_PROFILE)?.key, SECRET)
+    assert.ok(!JSON.stringify(body.config).includes(SECRET))
+  })
+
+  it('GET config reads back the same authProfile and apiKeySet', async () => {
+    const resp = await app.inject({ method: 'GET', url: '/_web/ai/semantic-index/config' })
+    assert.equal(resp.statusCode, 200)
+    const body = resp.json()
+    assert.equal(body.config.api.authProfile, AUTH_PROFILE)
+    assert.equal(body.apiKeySet, true)
+  })
+
+  it('persisted config file never contains the plaintext apiKey', () => {
+    const raw = fs.readFileSync(path.join(aiDataDir, SEMANTIC_INDEX_CONFIG_FILE), 'utf-8')
+    assert.ok(!raw.includes(SECRET))
+    assert.equal(JSON.parse(raw).api.authProfile, AUTH_PROFILE)
   })
 })
