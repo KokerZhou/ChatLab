@@ -68,15 +68,11 @@ jobs:
           CHATLAB_WEB_BASE: /ChatLab/
         run: pnpm run build:web-wasm
 
-      - name: Create site archive
-        working-directory: dist-web-wasm
-        run: zip -r "../chatlab-web-wasm-${GITHUB_SHA}.zip" .
-
       - name: Upload site archive
         uses: actions/upload-artifact@v6
         with:
           name: chatlab-web-wasm-${{ github.sha }}
-          path: chatlab-web-wasm-${{ github.sha }}.zip
+          path: dist-web-wasm
           if-no-files-found: error
           retention-days: 30
 
