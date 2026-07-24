@@ -1,0 +1,97 @@
+name: Web WASM Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: web-wasm-pages
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        shell: bash
+        run: |
+          archive="$RUNNER_TEMP/wasm-pack.tar.gz"
+          directory="$RUNNER_TEMP/wasm-pack-v0.15.0-x86_64-unknown-linux-musl"
+          curl --proto '=https' --tlsv1.2 -LsSf \
+            https://github.com/wasm-bindgen/wasm-pack/releases/download/v0.15.0/wasm-pack-v0.15.0-x86_64-unknown-linux-musl.tar.gz \
+            -o "$archive"
+          echo "c09f971ecaed9a2efc80fdcea7a00ef6b53c7fadc8c57d1f61b53a6aa66b668a  $archive" | sha256sum -c -
+          tar -xzf "$archive" -C "$RUNNER_TEMP"
+          install -m 755 "$directory/wasm-pack" "$CARGO_HOME/bin/wasm-pack"
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/parser-native
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build browser parser WASM
+        run: pnpm run build:parser-wasm
+
+      - name: Build Web WASM
+        env:
+          CHATLAB_WEB_BASE: /ChatLab/
+        run: pnpm run build:web-wasm
+
+      - name: Create site archive
+        working-directory: dist-web-wasm
+        run: zip -r "../chatlab-web-wasm-${GITHUB_SHA}.zip" .
+
+      - name: Upload site archive
+        uses: actions/upload-artifact@v6
+        with:
+          name: chatlab-web-wasm-${{ github.sha }}
+          path: chatlab-web-wasm-${{ github.sha }}.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist-web-wasm
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

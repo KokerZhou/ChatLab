@@ -9,7 +9,7 @@ const rootDir = import.meta.dirname
 
 export default defineConfig({
   root: resolve(rootDir, 'apps/web-wasm'),
-  base: '/',
+  base: process.env.CHATLAB_WEB_BASE ?? '/',
   plugins: [
     vue(),
     ui({
